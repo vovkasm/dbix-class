@@ -218,5 +218,38 @@ is_same_sql_bind(
 
 }
 
+my $attr = {};
+$rs_selectas_rel = $schema->resultset('BooksInLibrary')->search(undef, {
+  columns => 'me.id',
+  offset => 3,
+  rows => 4,
+  '+columns' => { bar => \['? * ?', [ $attr => 11 ], [ $attr => 12 ]], baz => \[ '?', [ $attr => 13 ]] },
+  order_by => [ \['? / ?', [ $attr => 1 ], [ $attr => 2 ]], \[ '?', [ $attr => 3 ]] ],
+  having => \[ '?', [ $attr => 21 ] ],
+});
+
+is_same_sql_bind(
+  $rs_selectas_rel->as_query,
+  '(
+    SELECT [id], [bar], [baz] FROM (
+      SELECT [id], [bar], [baz], ROW_NUMBER() OVER(  ORDER BY [ORDER__BY__1], [ORDER__BY__2] ) AS [rno__row__index] FROM (
+        SELECT [me].[id], ? * ? AS [bar], ? AS [baz], ? / ? AS [ORDER__BY__1], ? AS [ORDER__BY__2]
+          FROM [books] [me]
+        WHERE ( [source] = ? )
+        HAVING ?
+      ) [me]
+    ) [me]
+    WHERE [rno__row__index] >= ? AND [rno__row__index] <= ?
+  )',
+  [
+    [ $attr => 11 ], [ $attr => 12 ], [ $attr => 13 ],
+    [ $attr => 1 ], [ $attr => 2 ], [ $attr => 3 ],
+    [ { sqlt_datatype => 'varchar', sqlt_size => 100, dbic_colname => 'source' } => 'Library' ],
+    [ $attr => 21 ],
+    [ {%$OFFSET} => 4 ],
+    [ {%$TOTAL} => 7 ],
+  ],
+  'Pagination with sub-query in ORDER BY works'
+);
 
 done_testing;

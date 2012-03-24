@@ -365,21 +365,24 @@ SQL
         );
 
         my ($sql, @bind) = @${$owners->page(3)->as_query};
+        # not testing the SQL as it is quite different between top/rno
         is_same_bind (
           \@bind,
           [
-            ($dialect eq 'Top' ? [ { dbic_colname => 'test' } => 'xxx' ] : ()), # the extra re-order bind
-            [ { sqlt_datatype => 'varchar', sqlt_size => 100, dbic_colname => 'me.name' }
-              => 'somebogusstring' ],
             [ { dbic_colname => 'test' }
               => 'xxx' ],
-            ($dialect ne 'Top' ? ( [ $OFFSET => 7 ], [ $TOTAL => 9 ] ) : ()), # parameterised RNO
+            [ { sqlt_datatype => 'varchar', sqlt_size => 100, dbic_colname => 'me.name' }
+              => 'somebogusstring' ],
+            ($dialect eq 'Top'
+              ? [ { dbic_colname => 'test' } => 'xxx' ]  # the extra re-order bind
+              : ([ $OFFSET => 7 ], [ $TOTAL => 9 ]) # parameterised RNO
+            ),
             [ { sqlt_datatype => 'varchar', sqlt_size => 100, dbic_colname => 'me.name' }
               => 'somebogusstring' ],
             [ { dbic_colname => 'test' }
               => 'xxx' ],
           ],
-        );
+        ) || die $sql;
 
         is ($owners->page(1)->all, 3, "$test_type: has_many prefetch returns correct number of rows");
         is ($owners->page(1)->count, 3, "$test_type: has-many prefetch returns correct count");
@@ -409,6 +412,7 @@ SQL
         );
 
         ($sql, @bind) = @${$books->page(3)->as_query};
+        # not testing the SQL as it is quite different between top/rno
         is_same_bind (
           \@bind,
           [
@@ -432,7 +436,7 @@ SQL
             [ { sqlt_datatype => 'varchar', sqlt_size => 100, dbic_colname => 'source' }
               => 'Library' ],
           ],
-        );
+        ) || die $sql;
 
         is ($books->page(1)->all, 2, "$test_type: Prefetched grouped search returns correct number of rows");
         is ($books->page(1)->count, 2, "$test_type: Prefetched grouped search returns correct count");

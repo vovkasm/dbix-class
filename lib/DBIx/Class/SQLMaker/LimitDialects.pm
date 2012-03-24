@@ -101,7 +101,11 @@ sub _RowNumberOver {
 
   # make up an order if none exists
   my $requested_order = (delete $rs_attrs->{order_by}) || $self->_rno_default_order;
+
+  # the order binds (if any) will need to go at the end the entire inner select
+  local $self->{order_bind};
   my $rno_ord = $self->_order_by ($requested_order);
+  push @{$self->{select_bind}}, @{$self->{order_bind}};
 
   # this is the order supplement magic
   my $mid_sel = $out_sel;
@@ -119,7 +123,7 @@ sub _RowNumberOver {
 
   # and this is order re-alias magic
   for ($extra_order_sel, $alias_map) {
-    for my $col (keys %$_) {
+    for my $col (sort { length $b <=> length $a or $_->{$a} cmp $_->{$b} } keys %$_) {
       my $re_col = quotemeta ($col);
       $rno_ord =~ s/$re_col/$_->{$col}/;
     }
@@ -373,8 +377,8 @@ sub _prep_for_skimming_limit {
     }
 
     # Whatever order bindvals there are, they will be realiased and
-    # need to show up in front of the entire initial inner subquery
-    push @{$self->{pre_select_bind}}, @{$self->{order_bind}};
+    # reselected, and need to show up at end of the initial inner select
+    push @{$self->{select_bind}}, @{$self->{order_bind}};
   }
 
   # if this is a part of something bigger, we need to add back all
@@ -391,7 +395,7 @@ sub _prep_for_skimming_limit {
 
   # and this is order re-alias magic
   for my $map ($extra_order_sel, $alias_map) {
-    for my $col (keys %$map) {
+    for my $col (sort { length $b <=> length $a or $_->{$a} cmp $_->{$b} } keys %$map) {
       my $re_col = quotemeta ($col);
       $_ =~ s/$re_col/$map->{$col}/
         for ($r{order_by_reversed}, $r{order_by_requested});
@@ -562,6 +566,10 @@ sub _GenericSubQ {
   my $root_rsrc = $rs_attrs->{_rsroot_rsrc};
   my $root_tbl_name = $root_rsrc->name;
 
+  # we don't support binds in order_by anyhow
+  # localize in case we blow out of the generator due to this
+  local $self->{order_bind};
+
   my ($first_order_by) = do {
     local $self->{quote_char};
     map { ref $_ ? $_->[0] : $_ } $self->_order_by_chunks ($rs_attrs->{order_by})
@@ -586,8 +594,12 @@ sub _GenericSubQ {
     "Generic Subquery Limit first order criteria '$first_ord_col' must be unique"
   ) unless $root_rsrc->_identifying_column_set([$first_ord_col]);
 
-  my ($stripped_sql, $in_sel, $out_sel, $alias_map, $extra_order_sel)
-    = $self->_subqueried_limit_attrs ($sql, $rs_attrs);
+  my ($stripped_sql, $in_sel, $out_sel, $alias_map, $extra_order_sel) = do {
+    # perform the mangling only using the very first order crietria
+    # (the one we care about)
+    local $rs_attrs->{order_by} = $first_order_by;
+    $self->_subqueried_limit_attrs ($sql, $rs_attrs);
+  };
 
   my $cmp_op = $direction eq 'desc' ? '>' : '<';
   my $count_tbl_alias = 'rownum__emulation';
@@ -694,7 +706,9 @@ sub _subqueried_limit_attrs {
       ,
     };
 
-    $in_sel_index->{$sql_sel}++;
+    # anything with a placeholder in it needs re-selection
+    $in_sel_index->{$sql_sel}++ unless $sql_sel =~ / (?: ^ | \W ) \? (?: \W | $ ) /x;
+
     $in_sel_index->{$self->_quote ($sql_alias)}++ if $sql_alias;
 
     # record unqualified versions too, so we do not have
@@ -710,9 +724,12 @@ sub _subqueried_limit_attrs {
   # unless we are dealing with the current source alias
   # (which will transcend the subqueries as it is necessary
   # for possible further chaining)
+  # same for anything we do not recognize
   my (@in_sel, @out_sel, %renamed);
   for my $node (@sel) {
     if (
+      ! $in_sel_index->{$node->{sql}}
+        or
       $node->{as} =~ / (?<! ^ $re_alias ) \. /x
         or
       $node->{unquoted_sql} =~ / (?<! ^ $re_alias ) $re_sep /x
