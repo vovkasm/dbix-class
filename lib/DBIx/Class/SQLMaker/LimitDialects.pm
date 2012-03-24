@@ -154,6 +154,30 @@ sub _rno_default_order {
   return undef;
 }
 
+=head2 OffsetFetchNext
+
+ SELECT * FROM ... OFFSET 10 ROWS FETCH NEXT 5 ROWS ONLY
+
+Suported by B<SQL Server 2012>, purported to be more efficient than L</RowNumberOver>.
+
+=cut
+sub _OffsetFetchNext {
+  my ($self, $sql, $rs_attrs, $rows, $offset ) = @_;
+
+  # add group/having/order
+  $sql .= $self->_parse_rs_attrs( $rs_attrs );
+
+  if ($offset) {
+    $sql .= ' OFFSET ? ROWS';
+    push @{$self->{limit_bind}}, [ $self->__offset_bindtype => $offset];
+  }
+
+  $sql .= ' FETCH NEXT ? ROWS ONLY';
+  push @{$self->{limit_bind}}, [ $self->__rows_bindtype => $rows];
+
+  return $sql;
+}
+
 =head2 SkipFirst
 
  SELECT SKIP $offset FIRST $limit * FROM ...
