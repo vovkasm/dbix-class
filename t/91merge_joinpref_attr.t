@@ -4,9 +4,6 @@ use warnings;
 use Test::More;
 use lib qw(t/lib);
 use DBICTest;
-use Test::More;
-
-plan tests => 15;
 
 my $schema = DBICTest->init_schema();
 my $rs = $schema->resultset( 'CD' );
@@ -132,4 +129,4 @@ my $rs = $schema->resultset( 'CD' );
 }
 
 
-1;
+done_testing;
