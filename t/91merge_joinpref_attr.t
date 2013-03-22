@@ -2,6 +2,7 @@ use strict;
 use warnings;
 
 use Test::More;
+use Test::Exception;
 use lib qw(t/lib);
 use DBICTest;
 
@@ -19,17 +20,15 @@ my $rs = $schema->resultset( 'CD' );
 {
   my $a = { artist => { -foo => 1 } };
   my $b = { artist => { -foo => 2 } };
-  my $expected = [{ artist => { -foo => 1 } }, { artist => { -foo => 2 } }];
-  my $result = $rs->_merge_joinpref_attr($a, $b);
-  is_deeply( $result, $expected );
+  dies_ok { $rs->_merge_joinpref_attr($a, $b) }
+    "you can't just expect this to work";
 }
 
 {
   my $a = { artist => { -foo => 1 } };
   my $b = { artist => { -bar => 2 } };
-  my $expected = [{ artist => { -foo => 1 } }, { artist => { -bar => 2 } }];
-  my $result = $rs->_merge_joinpref_attr($a, $b);
-  is_deeply( $result, $expected );
+  dies_ok { $rs->_merge_joinpref_attr($a, $b) }
+    "you can't just expect this to work";
 }
 
 {
@@ -115,17 +114,15 @@ my $rs = $schema->resultset( 'CD' );
 {
   my $a = [ { artist => { -foo => { a => 1 } } } ];
   my $b = [ { artist => { -foo => { a => 2 } } } ];
-  my $expected = [ { artist => { -foo => { a => 1 } } }, { artist => { -foo => { a => 2 } } } ];
-  my $result = $rs->_merge_joinpref_attr($a, $b);
-  is_deeply( $result, $expected );
+  dies_ok { $rs->_merge_joinpref_attr($a, $b) }
+    "you can't just expect this to work";
 }
 
 {
   my $a = [ { artist => { -foo => 1 } } ];
   my $b = [ { artist => { -foo => 1 } } ];
-  my $expected = [ { artist => { -foo => 1 } } ];
-  my $result = $rs->_merge_joinpref_attr($a, $b);
-  is_deeply( $result, $expected );
+  dies_ok { $rs->_merge_joinpref_attr($a, $b) }
+    "you can't just expect this to work";
 }
 
 {
@@ -179,7 +176,7 @@ my $rs = $schema->resultset( 'CD' );
 {
   my $a = [ { artist => { -biff => 1 } }, { cd => { -bong => 2 } }, { 'artist' => 'manager' } ];
   my $b = [ { artist => { -biff => 1 } }, { cd => { -bong => 2 } }];
-  my $expected = [ 'artist', 'cd', { 'artist' => 'manager' } ];
+  my $expected = [ { artist => { -biff => 1 } }, { cd => { -bong => 2 } }, { 'artist' => 'manager' }, { artist => { -biff => 1 } }, { cd => { -bong => 2 } } ];
   my $result = $rs->_merge_joinpref_attr($a, $b);
   is_deeply( $result, $expected );
 }
@@ -188,16 +185,6 @@ my $rs = $schema->resultset( 'CD' );
   my $a = [ 'artist', 'cd', { 'artist' => 'manager' } ];
   my $b = { 'artist' => 'manager' };
   my $expected = [ 'artist', 'cd', { 'artist' => [ 'manager' ] } ];
-  my $result = $rs->_merge_joinpref_attr($a, $b);
-  is_deeply( $result, $expected );
-}
-
-{
-  # do we care about non-rel arguments to relationships?
-
-  my $a = [ { artist => { -x => 2 } }, 'cd', { artist => { -x => 2, manager => 1 } } ];
-  my $b = { artist => { -x => 2, manager => 3 } };
-  my $expected = [ { artist => { -x => 2 } }, 'cd', { artist => { -x => 2, manager => 1 } } ];
   my $result = $rs->_merge_joinpref_attr($a, $b);
   is_deeply( $result, $expected );
 }
