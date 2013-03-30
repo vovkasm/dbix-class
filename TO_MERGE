@@ -1,0 +1,78 @@
+On Fri, Sep 21, 2012 at 03:40:30PM +0200, Alexander Hartmaier wrote:
+> Hi Peter,
+> I finally took some time (cause I don't have any otherwise) and worked
+> on has_relationship_loaded.
+> After reading through the methods involved in the row inflation process I
+> figured out that _relationship_data gets populated from related_resultsets
+> when the rel accessor is called and there is a difference for newly created
+> row objects and those coming from a resultset with prefetch.
+> A slight change to check both resulted in all of my test succeed.
+> I'm pretty sure there are more tests needed to cover all cases of row
+> objects but I'm now pretty confident that the code does the right thing.
+> The question that came up and noone on #dbic-cabal at that time could
+> answer was why both _relationship_data and related_resultsets exists?
+> Isn't this double storage of the same data?
+> Can we get rid of _relationship_data or is it used to lazily construct
+> related_resultsets which hasn't happened because it wasn't required for
+> some states of the row object?
+
+Well you asked for it... note this code has not been thoroughly audited
+unlike e.g. the storage subsystem. It has a ton of bullshit from the
+wild-west-everything-goes era :) I never got around to clean it up :(
+
+So here goes the history: You have 3 types of relationships - multi, single,
+filter. I will go through the *object side* only, as we already discussed
+that has_relationship_loaded for now will not be implemented for resultset
+objects (separate yak).
+
+Multi is easy - we simply hold an $rs object in
+{related_resultsets}{$has_many_relname} with all the prefetched rows (if
+any) populated in its cache. All the logic for instantiation goes through
+related_resultset()[1]. Except of course not so fast: new() for a reason
+unknown *only* populates {_relationship_data} with an arrayref to the
+objects stashed in the $related_rs cache[2]. {related_resultsets} is never
+touched, hence once a thing is multicreated in memory you do not have access
+to it via the accessor (which never looks in {_relationship_data}.
+Incidentally this is RT#58551 (test in RT).
+
+Single is what one would expect to happen when you have a non-has_many
+(belongs_to, has_one, might_have). It works via
+{_relationship_data}{$single_relname} where it stores an actual object.
+Instantiation goes in two passes - first via *possibly* updating $self_row's
+columns to these of the $related_row in [3] and then by either setting or
+searching (find_related) for the related object in [4]. Note that
+{related_resultsets} is never set - this means that if you do:
+  $row->$might_have_rel($related_row)
+then
+  $row->$might_have_rel and $row->search_related($might_have_rel)
+will return different results. Whether we want to keep this or not - I do
+not know
+
+Filter is even worse - someone decided that *only* in case of belongs_to and
+*only* when a column name exists *identical* to the requested relname, we
+will instead be using the InflateColumn subsystem, completely bypassing the
+rest of the codebase. It doesn't use neither {_relationship_data} nor
+{related_resultsets}, but instead (via IC) stores everything in
+{_inflated_column}. Furthermore the behvior on retrieval *differs* depending
+on the relationship name (i.e. do we have a clash or not) since in the case
+of 'single' we do a ->find, but under 'filter' we do ->find_or_new[5]. To
+make things even crazier there is a checkpoint in set_columns() where all
+this data is being reset to *attempt* to bring some synchronization
+depending on which type of accessor you call[6].
+
+So... with all that in mind - you are trying to write an accessor that will
+introspect all this crazy. It is not a whole lot of work to clean it all up,
+just someone needs to do it. The fact that things are scattered between 3
+files is a pre-C3::XS era artefact. I do not have a problem with moving more
+stuff into Relationship::Base or wherever one believes thing belong.
+
+I have not looked at the branch itself at all, as before we figure out which
+of these things stays and what goes, there is little sense in adding the new
+method.
+
+[1] https://metacpan.org/source/FREW/DBIx-Class-0.08200/lib/DBIx/Class/Relationship/Base.pm#L426
+[2] https://metacpan.org/source/FREW/DBIx-Class-0.08200/lib/DBIx/Class/Row.pm#L223
+[3] https://metacpan.org/source/FREW/DBIx-Class-0.08200/lib/DBIx/Class/Relationship/Base.pm#L725
+[4] https://metacpan.org/source/FREW/DBIx-Class-0.08200/lib/DBIx/Class/Relationship/Accessor.pm#L28
+[5] https://metacpan.org/source/FREW/DBIx-Class-0.08200/lib/DBIx/Class/Relationship/Accessor.pm#L54
+[6] https://metacpan.org/source/FREW/DBIx-Class-0.08200/lib/DBIx/Class/Row.pm#L861
