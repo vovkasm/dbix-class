@@ -257,6 +257,7 @@ throws_ok {
     }
   ]);
 } qr/\QIncorrect value (expecting SCALAR-ref/, 'bind where literal sql expected throws';
+die;
 
 throws_ok {
   $rs->populate([
