@@ -1,5 +1,9 @@
 Revision history for DBIx::Class
 
+0.08250_01 2013-06-29 13:46 (UTC)
+    * New Features
+        - Support SQL Server's dialect of INSERT RETURNING
+
     * Misc
         - Replace $row with $result in all docs to be consistent and to
           clarify various return values
